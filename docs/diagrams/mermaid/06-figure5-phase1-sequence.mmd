@@ -1,0 +1,16 @@
+sequenceDiagram
+  participant WH as Grafana_webhook_Ph1
+  participant Agent as ai_sre_agent_core
+  participant Loki as Loki_external
+  participant LLM as LLM_API_external
+  participant Slack as Notify_Ph1_Ph2
+
+  Note over WH,Slack: Primary path today: Grafana webhook. Scheduled Loki sweep not implemented.
+  WH->>Agent: POST_hooks_grafana
+  Agent->>Loki: query_range_Ph1
+  Loki-->>Agent: log_streams
+  Note over Agent: redact normalize persist
+  Agent->>LLM: optional_Ollama_RCA
+  LLM-->>Agent: RCA_text
+  Note over Agent: merge enrichment save row
+  Agent->>Slack: Block_Kit_digest

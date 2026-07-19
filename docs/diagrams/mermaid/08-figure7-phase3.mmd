@@ -1,0 +1,6 @@
+flowchart TB
+  pr[Open_PR_from_Ph2]
+  gate[Extra_policy_namespace_Ph3]
+  ci[CI_green_and_approvals]
+  merge[Limited_auto_merge_or_push]
+  pr --> gate --> ci --> merge

@@ -1,0 +1,45 @@
+flowchart TB
+  subgraph ph0 [Phase 0]
+    c1["1_Ingress_router_Ph0_Ph1"]
+    c11["11_Observability_Ph0_to_Ph3"]
+    c0cfg["Config_secrets_Ph0"]
+  end
+
+  subgraph ph1 [Phase 1]
+    c2["2_Loki_client_Ph1"]
+    c4["4_Redaction_Ph1"]
+    c3["3_Normalize_dedupe_Ph1"]
+    c5["5_LLM_triage_Ph1"]
+    c6["6_Incident_store_Ph1"]
+    c7["7_Notifications_Ph1_Ph2"]
+  end
+
+  subgraph ph15 [Phase 1.5]
+    c15a["Runbook_links_Ph1_5"]
+    c15b["Service_repo_map_Ph1_5"]
+  end
+
+  subgraph ph2 [Phase 2]
+    c8["8_Policy_engine_Ph2"]
+    c9["9_Fix_generator_Ph2"]
+    c10["10_Bitbucket_integration_Ph2"]
+  end
+
+  subgraph ph3 [Phase 3]
+    c3auto["Limited_auto_apply_Ph3"]
+  end
+
+  c0cfg --> c1
+  c1 --> c2 --> c4 --> c3 --> c5 --> c6 --> c7
+  c5 --> c15a
+  c5 --> c15b
+  c5 --> c8
+  c6 --> c8
+  c8 -->|gates| c9 --> c10
+  c8 --> c7
+  c10 -.-> c3auto
+  c1 -.-> c11
+  c2 -.-> c11
+  c5 -.-> c11
+  c8 -.-> c11
+  c10 -.-> c11

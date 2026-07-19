@@ -1,0 +1,19 @@
+# Optional Cloudflare Tunnel — when CLOUDFLARE_TUNNEL_ENABLED=true (see bitbucket-pipelines.yml).
+# Requires CLOUDFLARE_TUNNEL_TOKEN (connector token from Zero Trust). Public hostname + DNS are configured in Cloudflare only.
+# → http://localhost:8080 in Zero Trust (cloudflared uses network_mode: service:agent).
+
+services:
+  cloudflared:
+    profiles: ["cloudflare"]
+    image: cloudflare/cloudflared:latest
+    depends_on:
+      agent:
+        condition: service_started
+    network_mode: "service:agent"
+    command:
+      - tunnel
+      - --no-autoupdate
+      - run
+      - --token
+      - ${CLOUDFLARE_TUNNEL_TOKEN:?CLOUDFLARE_TUNNEL_TOKEN must be set when Cloudflare tunnel is enabled}
+    restart: unless-stopped

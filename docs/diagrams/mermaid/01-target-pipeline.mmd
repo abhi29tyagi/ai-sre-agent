@@ -1,0 +1,26 @@
+flowchart TB
+  subgraph signalLayer [Signal layer]
+    GA[Grafana_alerts_LogQL_or_metrics]
+  end
+
+  subgraph agentCore [ai-sre-agent]
+    AR[Alert_router_normalize_dedupe]
+    EN[Loki_enricher_LogQL_fetch]
+    DE[Decision_engine_rules_first_LLM_assist]
+    AE[Action_executor_notify_PR_compose_optional]
+    FB[Feedback_loop_verify_close]
+  end
+
+  subgraph evidenceLayer [Evidence layer]
+    LK[Loki]
+  end
+
+  GA -->|webhook_or_alert_payload| AR
+  AR --> EN
+  EN -->|query_range_context| LK
+  LK --> EN
+  EN --> DE
+  DE --> AE
+  AE --> FB
+  FB -.->|requery_or_metrics| LK
+  FB -.->|optional_status| AR

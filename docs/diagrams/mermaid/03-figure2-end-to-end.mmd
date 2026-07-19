@@ -1,0 +1,66 @@
+flowchart TB
+  subgraph ext [External not owned by this repo]
+    apps[Compose_apps_on_VM]
+    alloy[Alloy]
+    loki[Loki]
+    grafana[Grafana_alerting]
+    bbCloud[Bitbucket]
+    slack[Slack_or_email]
+  end
+
+  subgraph ph0 [Phase 0 Foundations]
+    cfg[Config_and_secrets]
+    dry[Dry_run_defaults]
+  end
+
+  subgraph ph1 [Phase 1 Read only triage]
+    sched[Ingress_webhook_or_scheduler]
+    lokiCli[Loki_query_client]
+    redact[Redaction]
+    norm[Normalize_and_dedupe]
+    triage[LLM_triage_engine]
+    store[Incident_store]
+    notify[Notifications]
+  end
+
+  subgraph ph15 [Phase 1.5 Remediation guidance]
+    runbooks[Runbook_links]
+    svcmap[Service_to_repo_map]
+  end
+
+  subgraph ph2 [Phase 2 PR proposal]
+    policy[Policy_engine]
+    fixgen[Fix_generator_patch]
+    bbint[Bitbucket_integration]
+  end
+
+  subgraph ph3 [Phase 3 Optional limited auto apply]
+    auto[Limited_auto_apply]
+  end
+
+  subgraph crossCut [Cross-cutting all phases]
+    obs["11_Agent_observability_Ph0_to_Ph3"]
+  end
+
+  apps --> alloy --> loki
+  grafana -.->|webhook_preferred| sched
+  cfg --> sched
+  cfg --> policy
+  dry --> policy
+  sched --> lokiCli --> loki
+  lokiCli --> redact --> norm --> triage
+  triage --> runbooks
+  triage --> svcmap
+  triage --> store --> notify --> slack
+  triage --> policy
+  store --> policy
+  policy -->|allow_and_not_dry_run| fixgen
+  policy -->|deny_or_notify_only| notify
+  fixgen --> bbint --> bbCloud
+  bbint -.->|optional_narrow_policy| auto --> bbCloud
+  sched -.-> obs
+  lokiCli -.-> obs
+  triage -.-> obs
+  policy -.-> obs
+  bbint -.-> obs
+  cfg -.-> obs

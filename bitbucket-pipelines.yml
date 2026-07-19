@@ -1,0 +1,114 @@
+# Deploy agent stack from THIS repo (Bitbucket Pipelines).
+# Run: Repository → Pipelines → Run pipeline → "deploy-agent"
+#
+# Requires: self-hosted runner with Docker + Compose v2 (CPU VM).
+# Runner labels: self.hosted, linux.shell, ai.agent
+#
+# Deploy **Ollama first** from repo **ai-model** (pipeline **deploy-ollama**, `-p ai_model_ollama`)
+# so network **ai_model_ollama_default** exists — then run **deploy-agent** here.
+#
+# Repository variables — see README.md "Bitbucket: deploy-agent":
+#   Required (secured): POSTGRES_PASSWORD
+#   Optional: WEBHOOK_SECRET (secured), POSTGRES_HOST, POSTGRES_PORT, POSTGRES_USER,
+#             POSTGRES_DB, AGENT_PORT, LOG_LEVEL, OLLAMA_HOST,
+#             LOKI_URL_PROD, LOKI_URL_NONPROD, LOKI_URL_DEFAULT, LOKI_BEARER_TOKEN (secured), LOKI_*,
+#             SLACK_WEBHOOK_URL (secured), SLACK_SIGNING_SECRET (secured), SLACK_BOT_TOKEN (secured),
+#             NOTIFY_SLACK_ON_RCA_RERUN,
+#             CLOUDFLARE_TUNNEL_ENABLED, CLOUDFLARE_TUNNEL_TOKEN (secured)
+
+image: atlassian/default-image:4
+
+definitions:
+  steps:
+    - step: &deploy-agent
+        name: Deploy ai-sre-agent (CPU VM)
+        runs-on:
+          - self.hosted
+          - linux.shell
+          - ai.agent
+        script:
+          - set -euo pipefail
+          # Bitbucket Cloud / DinD examples set DOCKER_HOST=tcp://localhost:2375. Self-hosted runners
+          # must use the host daemon (default: unix:///var/run/docker.sock). Unset if inherited.
+          - unset DOCKER_HOST || true
+          - docker info >/dev/null || { echo "Docker CLI cannot reach the daemon; add runner user to 'docker' group and ensure dockerd is running."; exit 1; }
+          - docker network inspect ai_model_ollama_default >/dev/null 2>&1 || { echo "Network ai_model_ollama_default missing; run ai-model pipeline deploy-ollama on this host first."; exit 1; }
+          - test -n "${POSTGRES_PASSWORD:-}" || { echo "POSTGRES_PASSWORD repository variable not set"; exit 1; }
+          - cd "${BITBUCKET_CLONE_DIR}"
+          - umask 077
+          - |
+              {
+                printf 'POSTGRES_USER=%s\n' "${POSTGRES_USER:-sre}"
+                printf 'POSTGRES_DB=%s\n' "${POSTGRES_DB:-sre_agent}"
+                printf 'POSTGRES_PASSWORD=%s\n' "$POSTGRES_PASSWORD"
+                printf 'POSTGRES_HOST=%s\n' "${POSTGRES_HOST:-postgres}"
+                printf 'POSTGRES_PORT=%s\n' "${POSTGRES_PORT:-5432}"
+                printf 'AGENT_PORT=%s\n' "${AGENT_PORT:-8080}"
+                printf 'LOG_LEVEL=%s\n' "${LOG_LEVEL:-INFO}"
+                printf 'WEBHOOK_SECRET=%s\n' "${WEBHOOK_SECRET:-}"
+                printf 'OLLAMA_HOST=%s\n' "${OLLAMA_HOST:-http://ollama:11434}"
+                printf 'OLLAMA_MODEL=%s\n' "${OLLAMA_MODEL:-llama3.2}"
+                printf 'OLLAMA_RCA_ENABLED=%s\n' "${OLLAMA_RCA_ENABLED:-true}"
+                printf 'OLLAMA_TIMEOUT_SECONDS=%s\n' "${OLLAMA_TIMEOUT_SECONDS:-120}"
+                printf 'OLLAMA_RCA_MAX_LOG_CHARS=%s\n' "${OLLAMA_RCA_MAX_LOG_CHARS:-12000}"
+                printf 'OLLAMA_RCA_TEMPERATURE=%s\n' "${OLLAMA_RCA_TEMPERATURE:-}"
+                printf 'OLLAMA_RCA_TOP_P=%s\n' "${OLLAMA_RCA_TOP_P:-}"
+                printf 'OLLAMA_HEALTH_TIMEOUT_SECONDS=%s\n' "${OLLAMA_HEALTH_TIMEOUT_SECONDS:-5}"
+                printf 'OLLAMA_HEALTH_REQUIRE_MODEL=%s\n' "${OLLAMA_HEALTH_REQUIRE_MODEL:-true}"
+                printf 'LOKI_URL_PROD=%s\n' "${LOKI_URL_PROD:-}"
+                printf 'LOKI_URL_NONPROD=%s\n' "${LOKI_URL_NONPROD:-}"
+                printf 'LOKI_URL_DEFAULT=%s\n' "${LOKI_URL_DEFAULT:-}"
+                printf 'LOKI_BEARER_TOKEN=%s\n' "${LOKI_BEARER_TOKEN:-}"
+                printf 'LOKI_SCOPE_ORG_ID=%s\n' "${LOKI_SCOPE_ORG_ID:-}"
+                printf 'LOKI_ENRICH_ENABLED=%s\n' "${LOKI_ENRICH_ENABLED:-true}"
+                printf 'LOKI_ENRICH_WINDOW_MINUTES=%s\n' "${LOKI_ENRICH_WINDOW_MINUTES:-10}"
+                printf 'LOKI_ENRICH_AFTER_START_MINUTES=%s\n' "${LOKI_ENRICH_AFTER_START_MINUTES:-5}"
+                printf 'LOKI_ENRICH_RETRY_WIDE_SPAN_ON_EMPTY=%s\n' "${LOKI_ENRICH_RETRY_WIDE_SPAN_ON_EMPTY:-true}"
+                printf 'LOKI_ENRICH_EMPTY_FALLBACK_TO_NOW=%s\n' "${LOKI_ENRICH_EMPTY_FALLBACK_TO_NOW:-true}"
+                printf 'LOKI_ENRICH_ANCHOR=%s\n' "${LOKI_ENRICH_ANCHOR:-alert_start}"
+                printf 'LOKI_ENRICH_PRIORITIZE_STARTS_AT=%s\n' "${LOKI_ENRICH_PRIORITIZE_STARTS_AT:-true}"
+                printf 'LOKI_ENRICH_STRATIFY_LINES=%s\n' "${LOKI_ENRICH_STRATIFY_LINES:-true}"
+                printf 'LOKI_ENRICH_ERROR_PASS_ENABLED=%s\n' "${LOKI_ENRICH_ERROR_PASS_ENABLED:-true}"
+                printf 'LOKI_ENRICH_CLAMP_FUTURE_STARTS_AT=%s\n' "${LOKI_ENRICH_CLAMP_FUTURE_STARTS_AT:-true}"
+                printf 'LOKI_ENRICH_FUTURE_GAP_SPAN_MAX_MINUTES=%s\n' "${LOKI_ENRICH_FUTURE_GAP_SPAN_MAX_MINUTES:-180}"
+                printf 'LOKI_QUERY_DIRECTION=%s\n' "${LOKI_QUERY_DIRECTION:-backward}"
+                printf 'LOKI_QUERY_LIMIT=%s\n' "${LOKI_QUERY_LIMIT:-500}"
+                printf 'DB_POOL_MAX_SIZE=%s\n' "${DB_POOL_MAX_SIZE:-10}"
+                printf 'SLACK_WEBHOOK_URL=%s\n' "${SLACK_WEBHOOK_URL:-}"
+                printf 'SLACK_NOTIFY_ENABLED=%s\n' "${SLACK_NOTIFY_ENABLED:-true}"
+                printf 'SLACK_SMART_SKIP_OPERATOR_CHECKLIST=%s\n' "${SLACK_SMART_SKIP_OPERATOR_CHECKLIST:-true}"
+                printf 'SLACK_TIMEOUT_SECONDS=%s\n' "${SLACK_TIMEOUT_SECONDS:-10}"
+                printf 'SLACK_SIGNING_SECRET=%s\n' "${SLACK_SIGNING_SECRET:-}"
+                printf 'SLACK_BOT_TOKEN=%s\n' "${SLACK_BOT_TOKEN:-}"
+                printf 'NOTIFY_SLACK_ON_RCA_RERUN=%s\n' "${NOTIFY_SLACK_ON_RCA_RERUN:-false}"
+              } > .env
+          # Optional Cloudflare Tunnel — CLOUDFLARE_TUNNEL_TOKEN (Zero Trust connector token)
+          - |
+              set -euo pipefail
+              if [ "${CLOUDFLARE_TUNNEL_ENABLED:-false}" = "true" ] || [ "${CLOUDFLARE_TUNNEL_ENABLED:-false}" = "1" ]; then
+                echo "  Cloudflare tunnel token set=$([ -n "${CLOUDFLARE_TUNNEL_TOKEN:-}" ] && echo yes || echo no)" >&2
+                test -n "${CLOUDFLARE_TUNNEL_TOKEN:-}" || { echo "CLOUDFLARE_TUNNEL_ENABLED=true but CLOUDFLARE_TUNNEL_TOKEN is empty"; exit 1; }
+                printf '\nCLOUDFLARE_TUNNEL_TOKEN=%s\n' "${CLOUDFLARE_TUNNEL_TOKEN}" >> .env
+              fi
+          - chmod 600 .env
+          # Pin compose project name so this repo never collides with ai-model jobs
+          # running on the same host (Bitbucket clone dir basename is often "build").
+          - docker compose -p ai_sre_agent --env-file .env version
+          - docker compose -p ai_sre_agent --env-file .env build --pull
+          - |
+              set -euo pipefail
+              if [ "${CLOUDFLARE_TUNNEL_ENABLED:-false}" = "true" ] || [ "${CLOUDFLARE_TUNNEL_ENABLED:-false}" = "1" ]; then
+                docker compose -p ai_sre_agent \
+                  -f docker-compose.yml -f docker-compose.cloudflare.yml \
+                  --env-file .env \
+                  --profile cloudflare \
+                  up -d --remove-orphans
+              else
+                docker compose -p ai_sre_agent --env-file .env up -d --remove-orphans
+              fi
+          - docker compose -p ai_sre_agent --env-file .env ps
+
+pipelines:
+  custom:
+    deploy-agent:
+      - step: *deploy-agent

@@ -1,0 +1,28 @@
+flowchart LR
+  subgraph ingest [External ingest]
+    alloy2[Alloy]
+    loki2[Loki]
+  end
+
+  subgraph p1path [Ph1_pipeline]
+    direction TB
+    s[Ingress_or_scheduler_Ph0_Ph1]
+    lc[Loki_client_Ph1]
+    rd[Redaction_Ph1]
+    n[Normalize_Ph1]
+    t[LLM_triage_Ph1]
+    st[Store_Ph1]
+  end
+
+  subgraph p2path [Ph2_when_allowed]
+    p[Policy_Ph2]
+    f[Fix_gen_Ph2]
+    g[Bitbucket_Ph2]
+  end
+
+  alloy2 --> loki2 --> lc
+  s --> lc --> rd --> n --> t --> st
+  t --> p
+  st --> p
+  p -->|allowed| f --> g
+  p -->|default| nf[Notify_Ph1_Ph2]

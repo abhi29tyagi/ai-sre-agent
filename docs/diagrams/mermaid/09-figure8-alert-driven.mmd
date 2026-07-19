@@ -1,0 +1,19 @@
+sequenceDiagram
+  participant GA as Grafana_alerting
+  participant AG as FastAPI_agent
+  participant PG as Postgres
+  participant LK as Loki
+  participant OL as Ollama
+  participant SL as Slack_Incoming
+
+  GA->>AG: POST /hooks/grafana
+  Note right of AG: normalize summary optional Slack/Ollama overrides
+  AG->>PG: persist incoming_alert_events
+  AG->>LK: enrich_grafana_alert query_range
+  LK-->>AG: streams or skip reason
+  opt Ollama RCA enabled
+    AG->>OL: POST /api/chat RCA
+    OL-->>AG: RCA text
+  end
+  AG->>PG: save loki plus rca JSON
+  AG->>SL: Block Kit digest
