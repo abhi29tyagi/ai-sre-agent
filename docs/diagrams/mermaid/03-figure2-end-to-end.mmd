@@ -4,7 +4,7 @@ flowchart TB
     alloy[Alloy]
     loki[Loki]
     grafana[Grafana_alerting]
-    bbCloud[Bitbucket]
+    gitForge[Git_forge]
     slack[Slack_or_email]
   end
 
@@ -31,7 +31,7 @@ flowchart TB
   subgraph ph2 [Phase 2 PR proposal]
     policy[Policy_engine]
     fixgen[Fix_generator_patch]
-    bbint[Bitbucket_integration]
+    gitInt[SCM_PR_integration]
   end
 
   subgraph ph3 [Phase 3 Optional limited auto apply]
@@ -56,11 +56,11 @@ flowchart TB
   store --> policy
   policy -->|allow_and_not_dry_run| fixgen
   policy -->|deny_or_notify_only| notify
-  fixgen --> bbint --> bbCloud
-  bbint -.->|optional_narrow_policy| auto --> bbCloud
+  fixgen --> gitInt --> gitForge
+  gitInt -.->|optional_narrow_policy| auto --> gitForge
   sched -.-> obs
   lokiCli -.-> obs
   triage -.-> obs
   policy -.-> obs
-  bbint -.-> obs
+  gitInt -.-> obs
   cfg -.-> obs

@@ -1,6 +1,6 @@
 # Architecture diagram assets
 
-Bitbucket does **not** render Mermaid in Markdown, so [`ARCHITECTURE.md`](../../ARCHITECTURE.md) uses **PNG** images.
+Some Markdown hosts do **not** render Mermaid, so [`ARCHITECTURE.md`](../../ARCHITECTURE.md) uses **PNG** images.
 
 ## Layout
 
@@ -19,7 +19,7 @@ From the repo root:
 ./scripts/render-architecture-diagrams.sh
 ```
 
-This runs [`../scripts/render_architecture_png.py`](../scripts/render_architecture_png.py), which reads **`docs/diagrams/mermaid/*.mmd`** in sorted order. If that directory is empty, it falls back to extracting fenced Mermaid from `ARCHITECTURE.md` (for recovery only).
+This runs [`../../scripts/render_architecture_png.py`](../../scripts/render_architecture_png.py), which reads **`docs/diagrams/mermaid/*.mmd`** in sorted order. If that directory is empty, it falls back to extracting fenced Mermaid from `ARCHITECTURE.md` (for recovery only).
 
 ### Backend selection
 
