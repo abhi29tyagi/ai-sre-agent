@@ -2,7 +2,7 @@
 
 This document describes **ai-sre-agent**: the **orchestrator** is **VM + Docker Compose** friendly; **Loki / Grafana / Alloy** are assumed to **already run in production on dedicated hardware** (see [Rollout plan](#rollout-plan-cpu-first-single-vm-gpu-self-host-deferred)). **Kubernetes is not assumed** for the agent.
 
-**First-time deploy (pipelines, runners, repo variables, Grafana webhook):** use **[README.md](README.md)** (*Start here*, *Bitbucket — `deploy-agent`*, *Grafana webhook setup*). **Ollama** is deployed from the sibling **`ai-model`** repo.
+**First-time deploy (CI, runners, env/secrets, Grafana webhook):** use **[README.md](README.md)** (*Start here*, *Deploy — `deploy-agent`*, *Grafana webhook setup*). **Ollama** is deployed from the sibling **`ai-model`** repo.
 
 You are not building “another log viewer.” You are building an **incident decision system**: **Grafana (alerting)** defines *what matters*, **Loki** holds *evidence*, and this service is the **router + enricher + decision support + optional executor**.
 
@@ -27,15 +27,15 @@ You are not building “another log viewer.” You are building an **incident de
 - **Signal**: **Grafana Alerting** (LogQL and/or metric rules) → **webhook** (or compatible Alertmanager payload) → **ai-sre-agent** (separate deployment, reachable from Grafana’s network).
 - **Evidence**: ai-sre-agent → **Loki** `query_range` / LogQL around the alert window (typically ±5–15 minutes, bounded), over the network to the **existing** Loki endpoint.
 - **Humans**: Grafana Explore on the same Loki; Slack/email for notifications.
-- **Code changes**: ai-sre-agent → **Bitbucket** (branch + PR) when Phase 2 remediation is enabled.
+- **Code changes**: ai-sre-agent → **git forge** (branch + PR) when Phase 2 remediation is enabled.
 
 **Why Loki API for logs**: stable, automatable contract (`/loki/api/v1/query_range`). **Why not “read logs from Grafana” as the primary path**: Grafana is the control plane and UI; log retrieval for automation should still be **Loki**.
 
-Diagrams in [Architecture diagrams](#architecture-diagrams) are embedded as **PNG** (Bitbucket Markdown does not render Mermaid). **Editable sources** live under [`docs/diagrams/mermaid/`](docs/diagrams/mermaid/).
+Diagrams in [Architecture diagrams](#architecture-diagrams) are embedded as **PNG** so they render on Markdown hosts that do not support Mermaid. **Editable sources** live under [`docs/diagrams/mermaid/`](docs/diagrams/mermaid/).
 
 ## Rollout plan: CPU-first single VM (GPU self-host deferred)
 
-**Operational reality:** one **CPU-only VM** (example: **16 vCPU / 32 GB / 250 GB** disk) typically runs **two Compose stacks** from **two repos**: **`ai-sre-agent`** (**FastAPI + Postgres**, pipeline **`deploy-agent`**, runner **`ai.agent`**) and **`ai-model`** (**Ollama**, pipeline **`deploy-ollama`**, runner **`ai.model`**). Same physical host, **different Bitbucket labels** so jobs do not collide.
+**Operational reality:** one **CPU-only VM** (example: **16 vCPU / 32 GB / 250 GB** disk) typically runs **two Compose stacks** from **two repos**: **`ai-sre-agent`** (**FastAPI + Postgres**, **`deploy-agent`**, runner **`ai.agent`**) and **`ai-model`** (**Ollama**, **`deploy-ollama`**, runner **`ai.model`**). Same physical host, **different runner tags** so jobs do not collide.
 
 **Self-hosted GPU vLLM** (repo **`ai-model`**, pipeline **`deploy-vllm`**, runner label **`common.ai`** on a **future GPU machine**) is **out of scope until that runner exists**. **Do not run `deploy-vllm` on the CPU VM**. When Ollama is not enough before GPU exists, **escalate to a vendor OpenAI-compatible API** via **`OPENAI_BASE_URL`** + **`OPENAI_API_KEY`** in **`ai-sre-agent`**.
 
@@ -62,13 +62,13 @@ Add **swap only as a last resort**; prefer enough RAM so **Ollama** (from **`ai-
 
 **Escalation (when quality or patch generation needs a stronger model):** **Vendor OpenAI-compatible API** (e.g. **OpenAI**, Anthropic-compatible adapters, …) via **`OPENAI_BASE_URL`** + key in **`ai-sre-agent`** config—**no self-hosted GPU required** for this phase.
 
-**Optional later:** **`ai-model`** **`deploy-vllm`** on a **GPU host** with Bitbucket runner labels **`self.hosted`**, **`linux.shell`**, **`common.ai`**—not on the CPU VM.
+**Optional later:** **`ai-model`** **`deploy-vllm`** on a **GPU host** with runner tags **`self.hosted`**, **`linux.shell`**, **`common.ai`**—not on the CPU VM.
 
 ### Repositories (scope)
 
 | Repo | Role |
 | --- | --- |
-| **`ai-sre-agent`** (this repo) | Webhook ingress, Loki client, dedupe, policy, prompts, incident store, notifications, optional Bitbucket actions; **Compose: agent + Postgres** (runner **`ai.agent`**). |
+| **`ai-sre-agent`** (this repo) | Webhook ingress, Loki client, dedupe, policy, prompts, incident store, notifications, optional git PR actions; **Compose: agent + Postgres** (runner **`ai.agent`**). |
 | **`ai-model`** | **CPU (now):** **Ollama** via **`docker-compose.ollama.yml`** and pipeline **`deploy-ollama`** (runner **`ai.model`**). **GPU (later):** **vLLM** via **`docker-compose.yml`** and **`deploy-vllm`** (runner **`common.ai`** on a GPU machine). |
 | **Production observability** | **Already deployed** on dedicated hardware (**Loki / Grafana / Alloy**). This project only needs **URLs, auth, and network access**; optional **`observability/`** folder here for **mirrored** alert/LogQL snippets aligned with prod—not a second copy of the stack. |
 
@@ -114,7 +114,7 @@ Ship these **before expecting the model alone to carry quality**:
 4. **Rules first** — map known signatures to canned guidance so the LLM is not the only brain ([Policy engine](#8-policy-engine)).
 5. **Incident store + Slack** — deduped thread with links back to Grafana/Loki ([Notifications](#7-notifications)).
 
-**Optional “feed” beyond raw logs:** link **runbooks** / **service → repo** YAML into the prompt ([Phase 1.5](#phase-15--remediation-guidance-still-no-mutating-actions)); later, small **RAG** over internal docs if suggestions still feel shallow.
+**Optional “feed” beyond raw logs:** link **runbooks** / **service → repo** YAML into the prompt ([Phase 1.5](#phase-15-remediation-guidance-still-no-mutating-actions)); later, small **RAG** over internal docs if suggestions still feel shallow.
 
 ## Mental model: signal, evidence, brain
 
@@ -235,14 +235,14 @@ Crosswalk to the **target pipeline** above:
 
 **What**
 
-- **Code/config fixes**: **Bitbucket** branch + PR from a generated patch, with evidence and rollback notes in the description (default: **no auto-merge**).
+- **Code/config fixes**: **git forge** branch + PR from a generated patch, with evidence and rollback notes in the description (default: **no auto-merge**).
 - **Operational actions (optional, same phase if policy allows)**: narrow **action executor** surface for **Docker Compose** on **allowlisted** hosts (for example **restart** of a named **application** service). **Do not** aim this at the **production Loki/Grafana plane** unless that is an **explicit**, owned, policy-gated exception—the observability stack is **dedicated prod hardware**, not the agent VM.
 
 **Why**: pull requests are reviewable and reversible; a tiny set of **allowlisted** infra actions can reduce MTTR when PRs are too slow for a known-safe playbook.
 
-**How**: policy YAML (repos, paths, change kinds, allowed executor verbs, rate limits, blast radius) + secret scanning on diffs + audit log. Bitbucket: REST + **git** over SSH deploy key or scoped HTTPS.
+**How**: policy YAML (repos, paths, change kinds, allowed executor verbs, rate limits, blast radius) + secret scanning on diffs + audit log. Git forge: REST + **git** over SSH deploy key or scoped HTTPS.
 
-**Multi-repo reality (e.g. “service A” from “repo A”)**: the webhook usually identifies **which workload failed** (`service`, `container`, image digest, compose project). **Do not let the LLM guess** the Bitbucket repo: use **Phase 1.5** `service → owning repo` data (and image→repo overrides if one image maps to one repo) so Phase 2 opens the PR in **the correct repo A** every time.
+**Multi-repo reality (e.g. “service A” from “repo A”)**: the webhook usually identifies **which workload failed** (`service`, `container`, image digest, compose project). **Do not let the LLM guess** the git repo: use **Phase 1.5** `service → owning repo` data (and image→repo overrides if one image maps to one repo) so Phase 2 opens the PR in **the correct repo A** every time.
 
 **When the first PR is not good enough**: keep work on the **same branch** (additional commits) or a **follow-up branch**, with a **cap on model iterations** and an **audit trail** (reviewer text, new diff, model id). That refinement can run inside this service (API job) or via an **optional OpenClaw** session that receives the PR URL + failing review + fresh Loki excerpts and proposes an updated patch—still subject to the same **policy engine** and **no auto-merge** default.
 
@@ -320,9 +320,9 @@ The numbered modules below are how you **map the logical components into code** 
 - **Why**: optional bridge from triage to repo change; separated so triage can ship alone.
 - **How**: second LLM call or specialized prompt; output unified diff only; validate size and forbidden paths before git apply.
 
-### 10. Bitbucket integration
+### 10. SCM PR integration
 
-- **Why**: your remotes and org process live on Bitbucket.
+- **Why**: remotes and review process live on a git forge (GitHub, GitLab, or similar).
 - **How**: minimal-permission API tokens + git push; PR description sections: Evidence, Risk, Rollback, Test plan.
 
 ### 11. Observability of the agent
@@ -343,7 +343,7 @@ Figures below use **Ph 0** … **Ph 3** for [repository milestones](#phased-arch
 - **Figure 7** — optional Ph3 narrow auto-apply  
 - **Figure 8** — **alert webhook** path (preferred signal source)  
 
-**Bitbucket** shows the **PNG** images below. Every [numbered module](#implementation-modules-why-and-how) **1–11** appears in **Figure 3** with its primary phase label.
+The **PNG** images below are the portable view of each diagram. Every [numbered module](#implementation-modules-why-and-how) **1–11** appears in **Figure 3** with its primary phase label.
 
 **Sources and outputs**: canonical Mermaid is in [`docs/diagrams/mermaid/*.mmd`](docs/diagrams/mermaid/) (see [`docs/diagrams/mermaid/README.md`](docs/diagrams/mermaid/README.md)). Generated bitmaps are [`docs/diagrams/architecture-fig1.png`](docs/diagrams/architecture-fig1.png) … [`architecture-fig9.png`](docs/diagrams/architecture-fig9.png) (`fig1` = target pipeline above; `fig2` = printed Figure 1; … `fig9` = printed Figure 8). After editing any `.mmd`, run `./scripts/render-architecture-diagrams.sh`. Preview Mermaid in [Mermaid Live Editor](https://mermaid.live).
 
@@ -408,7 +408,7 @@ Shows the **shipped** webhook path: persist row → **Loki** `query_range` → o
 ## Security and safety summary
 
 - Authenticate **Grafana/Alertmanager webhooks** (shared secret, signature, or network allowlist); reject replayed payloads with idempotency keys.
-- Read-only Loki principal; least privilege Bitbucket token; deploy keys per repo where possible.
+- Read-only Loki principal; least privilege git-forge token; deploy keys per repo where possible.
 - Default `DRY_RUN`; Phase 2 behind allowlists and diff limits.
 - Redact before LLM; do not treat env files or secret mounts as routine log samples.
 - Audit log of actions (query params, PR URLs, patch hashes).
@@ -426,7 +426,7 @@ Start as **one service** in this repo; split only when ownership or release cade
 **Minimal layout (single Python or Node service)**
 
 - `docker-compose.yml` — agent + **Postgres** (enable **`pgvector`** when you add embeddings) + optional **Redis**; **Ollama** lives in **`ai-model`** (`docker-compose.ollama.yml`); mount config.
-- `src/` (or `app/`) — `webhook/` or `ingress/`, `loki/`, `pipeline/` (normalize, dedupe, redact), `llm/`, `incidents/`, `policy/`, `actions/` (notify, optional compose, Bitbucket), `integrations/bitbucket/`
+- `src/` (or `app/`) — `webhook/` or `ingress/`, `loki/`, `pipeline/` (normalize, dedupe, redact), `llm/`, `incidents/`, `policy/`, `actions/` (notify, optional compose, git PRs), `integrations/git/`
 - `config/` — Loki URL, webhook secrets, LogQL templates, label conventions, allowlisted repos and executor verbs.
 - `prompts/` — versioned prompt templates (triage vs patch).
 - `observability/` (optional) — versioned Grafana alert JSON/YAML, dashboard snapshots, LogQL snippets aligned with [Log and label contract](#log-and-label-contract-prerequisites-for-good-automation).
@@ -456,7 +456,7 @@ ai-sre-agent/
 
 ## Quick alignment (multi-repo blueprint)
 
-A common **team sketch** looks like: **Compose apps → Alloy → Loki → Grafana (alerts + dashboards) → webhook → FastAPI orchestrator → (Slack) → Bitbucket PR**, with **Ollama on a CPU VM** from **`ai-model`** (this rollout’s default) or a **vendor OpenAI-compatible** endpoint when you escalate, and **OpenClaw** reserved for **optional interactive refinement** after the deterministic path exists. That matches this document if these invariants stay explicit:
+A common **team sketch** looks like: **Compose apps → Alloy → Loki → Grafana (alerts + dashboards) → webhook → FastAPI orchestrator → (Slack) → git PR**, with **Ollama on a CPU VM** from **`ai-model`** (this rollout’s default) or a **vendor OpenAI-compatible** endpoint when you escalate, and **OpenClaw** reserved for **optional interactive refinement** after the deterministic path exists. That matches this document if these invariants stay explicit:
 
 | Sketch item | Where it lives in this doc |
 | --- | --- |
@@ -464,15 +464,15 @@ A common **team sketch** looks like: **Compose apps → Alloy → Loki → Grafa
 | Log fetcher / context builder | [Loki enricher](#2-loki-client-query-layer-enricher-backend), [Normalization / dedupe](#3-normalization-and-deduplication), [Redaction](#4-redaction). |
 | Decision engine | [Policy engine](#8-policy-engine) **before** mutating actions; [LLM triage](#5-llm-triage-engine-assist-not-sole-decider) **assist only** for summaries and suggestions. |
 | Slack ↔ feedback | [Notifications](#7-notifications); durable state still needs an [incident store](#6-incident-store) (fingerprints, dedupe, audit). |
-| PR generator | [Bitbucket integration](#10-bitbucket-integration), [Phase 2](#phase-2--controlled-remediation-pr-first-optional-executor); **service → owning repo** must be **config data** ([Phase 1.5](#phase-15--remediation-guidance-still-no-mutating-actions)), not LLM-guessed. |
+| PR generator | [SCM PR integration](#10-scm-pr-integration), [Phase 2](#phase-2-controlled-remediation-pr-first-optional-executor); **service → owning repo** must be **config data** ([Phase 1.5](#phase-15-remediation-guidance-still-no-mutating-actions)), not LLM-guessed. |
 | Ollama vs stronger inference | **This rollout:** **Ollama** from **`ai-model`** (**`deploy-ollama`**) on the **CPU VM**; **`ai-sre-agent`** calls **`OLLAMA_HOST`** ([Rollout plan](#rollout-plan-cpu-first-single-vm-gpu-self-host-deferred)). Escalation: **vendor API** from **`ai-sre-agent`**. **`deploy-vllm`** + **`common.ai`** only on a **GPU host** when added. See [Model strategy](#model-strategy-layers-not-one-model-for-everything). |
 | Three repos (`ai-orchestrator`, `observability-stack`, `shared-utils`) | Often **observability already exists in prod** (dedicated hardware); **ai-sre-agent** is the **orchestrator** repo ([Suggested repository layout](#suggested-repository-layout-implementation)). A separate **`observability-stack`** repo is optional for **IaC that maps to prod**; keep **webhook auth, Loki query budgets, repo mapping, and policy** in the agent so behavior does not fragment. |
 
-**Often missing from a one-page sketch (add to your internal doc):** webhook **authentication** and **idempotency**, **bounded** LogQL windows and **rate limits**, **redaction** before any LLM call, **dry-run** default for actions, **weak PR → capped iterations** with audit ([Phase 2](#phase-2--controlled-remediation-pr-first-optional-executor)), optional **scheduled Loki sweep** when alert coverage is thin ([Hybrid](#hybrid-recommended-in-this-document)).
+**Often missing from a one-page sketch (add to your internal doc):** webhook **authentication** and **idempotency**, **bounded** LogQL windows and **rate limits**, **redaction** before any LLM call, **dry-run** default for actions, **weak PR → capped iterations** with audit ([Phase 2](#phase-2-controlled-remediation-pr-first-optional-executor)), optional **scheduled Loki sweep** when alert coverage is thin ([Hybrid](#hybrid-recommended-in-this-document)).
 
 ## Document maintenance
 
-Update this file when phases ship or when invariants change (LogQL, label contract, Bitbucket auth mode, model provider, **CPU vs GPU host**, VM sizing). When behavior ships in code (Slack paths, Loki enrichment knobs, DB schema notes), align **[As-built checkpoint](#as-built-checkpoint-this-repository)** and **Figure 8** (Mermaid source), then regenerate PNGs: `./scripts/render-architecture-diagrams.sh`.
+Update this file when phases ship or when invariants change (LogQL, label contract, git-forge auth mode, model provider, **CPU vs GPU host**, VM sizing). When behavior ships in code (Slack paths, Loki enrichment knobs, DB schema notes), align **[As-built checkpoint](#as-built-checkpoint-this-repository)** and **Figure 8** (Mermaid source), then regenerate PNGs: `./scripts/render-architecture-diagrams.sh`.
 
 ## Appendix: Loki-centric vs alert-driven
 

@@ -15,7 +15,7 @@ The agent accepts either:
 
 | Source | When to use |
 |--------|-------------|
-| **`DATABASE_URL`** | Full connection URI (set in `.env` / Bitbucket if you prefer one string). |
+| **`DATABASE_URL`** | Full connection URI (set in `.env` / CI secrets if you prefer one string). |
 | **`POSTGRES_HOST`**, **`POSTGRES_PORT`**, **`POSTGRES_USER`**, **`POSTGRES_PASSWORD`**, **`POSTGRES_DB`** | Default in Compose; avoids URL-encoding issues if the password contains `@` or other special characters. |
 
 `DATABASE_URL` wins when set (see `app/db.py` → `_build_conninfo`).
@@ -48,7 +48,7 @@ Indexes (also in `app/db.py`):
 
 ## Operations
 
-- **Backup:** snapshot the Postgres volume used by Compose (see main [README](../README.md) → Bitbucket / volume notes).
+- **Backup:** snapshot the Postgres volume used by Compose (see main [README](../README.md) → deploy / volume notes).
 - **Inspect:** use `GET /events/recent` (with **`X-Webhook-Token`** when `WEBHOOK_SECRET` is set) or connect with `psql` using the same env as the agent.
 
 ## Roadmap

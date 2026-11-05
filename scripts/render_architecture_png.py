@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render Mermaid `.mmd` sources to PNG files for Bitbucket-friendly docs.
+"""Render Mermaid `.mmd` sources to PNG files for Markdown hosts that do not render Mermaid.
 
 Default inputs: sorted `docs/diagrams/mermaid/*.mmd` → `docs/diagrams/architecture-figN.png`.
 

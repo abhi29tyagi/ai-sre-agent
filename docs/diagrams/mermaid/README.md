@@ -1,6 +1,6 @@
 # Mermaid sources (canonical)
 
-These **`.mmd`** files are the **source of truth** for architecture diagrams. [`ARCHITECTURE.md`](../../ARCHITECTURE.md) embeds **PNG** images (Bitbucket does not render Mermaid in Markdown).
+These **`.mmd`** files are the **source of truth** for architecture diagrams. [`ARCHITECTURE.md`](../../../ARCHITECTURE.md) embeds **PNG** images so diagrams stay visible on hosts that do not render Mermaid.
 
 | File | PNG output | Topic |
 | --- | --- | --- |

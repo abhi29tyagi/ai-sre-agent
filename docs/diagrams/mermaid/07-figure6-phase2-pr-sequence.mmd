@@ -2,8 +2,8 @@ sequenceDiagram
   participant Store as Incident_store_Ph1
   participant Pol as Policy_engine_Ph2
   participant Fix as Fix_generator_Ph2
-  participant Git as Bitbucket_Ph2
-  participant BB as Bitbucket_cloud
+  participant Git as Git_client_Ph2
+  participant Forge as Git_forge
   participant Hum as Human_reviewer
 
   Note over Store,Pol: Phase 2 gated automation
@@ -13,6 +13,6 @@ sequenceDiagram
   else allowed_change_kind
     Pol->>Fix: request_patch
     Fix->>Git: unified_diff
-    Git->>BB: branch_push_open_PR
-    BB-->>Hum: PR_for_review_no_auto_merge
+    Git->>Forge: branch_push_open_PR
+    Forge-->>Hum: PR_for_review_no_auto_merge
   end

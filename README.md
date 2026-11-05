@@ -1,6 +1,6 @@
 # ai-sre-agent
 
-Orchestrator between **prod Grafana/Loki** and **operators + automation**: webhooks, future Loki enrichment, rules-first triage, LLM assist, Postgres, Slack/Bitbucket when you build them. **Ollama** runs in the separate Bitbucket repo **`ai-model`**—not here.
+Orchestrator between **prod Grafana/Loki** and **operators + automation**: webhooks, future Loki enrichment, rules-first triage, LLM assist, Postgres, Slack/git PRs when you build them. **Ollama** runs in the sibling repo **`ai-model`**—not here.
 
 **Full design:** [ARCHITECTURE.md](ARCHITECTURE.md)
 
@@ -9,13 +9,13 @@ Orchestrator between **prod Grafana/Loki** and **operators + automation**: webho
 ## Start here (first deploy)
 
 1. **Host:** CPU VM with **Docker Engine** and **Compose v2** (`docker compose version`). Enough RAM/disk for **Postgres + agent** plus **Ollama** (separate compose from `ai-model`).
-2. **Bitbucket:** enable **Pipelines** on **`ai-model`** and **`ai-sre-agent`**. Register **self-hosted runners** on this host (or split later if you want):
-   - **`self.hosted`**, **`linux.shell`**, **`ai.model`** → runs **`deploy-ollama`**
-   - **`self.hosted`**, **`linux.shell`**, **`ai.agent`** → runs **`deploy-agent`**
-3. **Repository variables:** in each repo go **Repository settings → Repository variables** (mark passwords/tokens **Secured**). Use the tables in [Bitbucket: deploy-agent](#bitbucket-deploy-agent) below.
-4. **Run pipelines (order matters):** **`ai-model`** → **Run pipeline** → **`deploy-ollama`**, wait for success → **`ai-sre-agent`** → **`deploy-agent`**.
+2. **CI:** enable workflows/pipelines on **`ai-model`** and **`ai-sre-agent`**. Register **self-hosted runners** on this host (or split later if you want):
+   - tags **`ai.model`** → runs **`deploy-ollama`**
+   - tags **`ai.agent`** → runs **`deploy-agent`** (`scripts/deploy-agent.sh`)
+3. **Secrets / env:** set the same names as [Deploy: deploy-agent](#deploy-deploy-agent) in CI secrets or the host environment (mark passwords/tokens secret).
+4. **Deploy (order matters):** **`ai-model`** **`deploy-ollama`**, wait for success → on this repo run **`./scripts/deploy-agent.sh`**.
 5. **Verify:** `curl -sS http://<vm-ip>:8080/health` → `{"status":"ok"}`. Then [Grafana webhook setup](#grafana-webhook-setup).
-6. **Still missing for “full SRE agent” (beyond intake):** prod **Loki** read URL + auth, LogQL/label contract, Slack/Bitbucket credentials, `OPENAI_*` if you skip Ollama for some paths, and policy/actions modules—all in [ARCHITECTURE.md](ARCHITECTURE.md) Phases **1+**.
+6. **Still missing for “full SRE agent” (beyond intake):** prod **Loki** read URL + auth, LogQL/label contract, Slack/git credentials, `OPENAI_*` if you skip Ollama for some paths, and policy/actions modules—all in [ARCHITECTURE.md](ARCHITECTURE.md) Phases **1+**.
 
 ---
 
@@ -32,7 +32,7 @@ Use this as a quick execution board for this repo.
 | `POST /events/{id}/rca/rerun` — regenerate Ollama RCA (optional model, **`user_prompt`**, Slack resend). | Done |
 | Slack Events API — thread **`rca` / `rerun`** → same rerun path; retries / duplicate `event_id` are dropped (in-memory TTL dedupe). | Done |
 | Async Postgres via **`psycopg_pool.AsyncConnectionPool`** (no more sync DB calls inside async routes). | Done |
-| Bitbucket deploy pipeline (`deploy-agent`) with self-hosted runner support. | Done |
+| Deploy script (`scripts/deploy-agent.sh`) with self-hosted runner support. | Done |
 | Shared-host Compose collision fix via pinned project names in pipelines. | Done |
 | Loki client (`query_range`), env routing, selector ladders, tight **`startsAt`** window then optional wide-span / **`now`** retries + asymmetric end-cap. | Done |
 | Baseline redaction before Slack + Ollama (`redact_for_slack`, LLM blob redaction — extend patterns as needed). | Done |
@@ -43,7 +43,7 @@ Use this as a quick execution board for this repo.
 | Container hardening: non-root **`app`** user + agent **`/health`** healthcheck. | Done |
 | Incident schema/migrations beyond raw intake event table. | Pending |
 | Rule engine and confidence model for deterministic guidance. | Pending |
-| Bitbucket PR flow (policy-gated, dry-run first). | Pending |
+| Git forge PR flow (policy-gated, dry-run first). | Pending |
 | Audit trail and rate limits for all external actions. | Pending |
 | Optional: **re-query Loki on rerun** (refresh enrichment vs frozen snapshot). Still **not** implemented — rerun uses **stored** Loki enrichment only (`execute_rca_rerun`). | Pending |
 
@@ -76,7 +76,7 @@ Use this as a quick execution board for this repo.
 | **`requirements.txt`**, **`requirements-dev.txt`**, **`Dockerfile`** | Python deps and agent image build (non-root user, healthcheck-friendly). |
 | **`docker-compose.yml`** | **Postgres** + **agent** only (agent has a `/health` healthcheck). |
 | **`.env.example`** | Env names for local use; pipeline writes a real **`.env`** on the runner (never commit secrets). |
-| **`bitbucket-pipelines.yml`** | Custom pipeline **`deploy-agent`**. |
+| **`scripts/deploy-agent.sh`** | Host/CI deploy for Compose project **`ai_sre_agent`**. |
 | **`ARCHITECTURE.md`** | Phases, security, Loki/Grafana contracts, diagrams. |
 | **[`database/README.md`](database/README.md)** | Postgres: connection env, pool, `incoming_alert_events` schema, operations. |
 | **`docs/`**, **`scripts/`** | Mermaid sources, PNG diagrams, `./scripts/render-architecture-diagrams.sh`. |
@@ -87,12 +87,12 @@ Use this as a quick execution board for this repo.
 
 | Piece | Role |
 |-------|------|
-| **`agent` container** | HTTP API (health + webhook + recent-events view), payload normalization, and intake persistence to Postgres; later: Loki client, policy, LLM, Slack, Bitbucket. |
+| **`agent` container** | HTTP API (health + webhook + recent-events view), payload normalization, and intake persistence to Postgres; later: Loki client, policy, LLM, Slack, git PRs. |
 | **`postgres` container** | Durable data; **`incoming_alert_events`** — details in [**database/README.md**](database/README.md). |
 | **Ollama** | Separate project in **`ai-model`**; agent reaches it via **`OLLAMA_HOST`**. |
 | **Prod Grafana / Loki** | External; Grafana **POSTs in**, agent will **query Loki out** once implemented. |
 
-**Roadmap modules** (Loki enricher, redaction, policy, LLM orchestration, Slack, Bitbucket, etc.) are specified in [ARCHITECTURE.md](ARCHITECTURE.md). Current code covers **ingress + auth + basic normalization + Postgres intake persistence**.
+**Roadmap modules** (Loki enricher, redaction, policy, LLM orchestration, Slack, git PRs, etc.) are specified in [ARCHITECTURE.md](ARCHITECTURE.md). Current code covers **ingress + auth + basic normalization + Postgres intake persistence**.
 
 ---
 
@@ -108,7 +108,7 @@ Use this as a quick execution board for this repo.
               └──────────┬──────────┘   └────────┬─────────┘
                          │    OLLAMA_HOST       │
                          └──────────────────────┘
-        Slack / Bitbucket / vendor OPENAI_*  →  later phases
+        Slack / git PRs / vendor OPENAI_*  →  later phases
 ```
 
 ---
@@ -131,7 +131,7 @@ Grafana lives in **prod** (not this repo). Point it at **`https://<host>:<port>/
 
 You can run **two Loki instances** (for example prod and non-prod). The agent picks **`LOKI_URL_PROD`** vs **`LOKI_URL_NONPROD`** using **Grafana alert labels first**, then **annotations** if labels omit env (same keys: optional **`loki_env`** / **`loki_stack`**, then `alloy_environment`, `environment`, `env`, `stage`). Add **`loki_env=prod`** (or **`staging`**, etc.) on the **alert rule** if you want routing that does not depend on log stream labels. That decides **which Loki API** to call **before** `query_range`; LogQL stream selectors still use labels such as `environment` / `service_name` to match lines.
 
-If Grafana omits env labels, set **`LOKI_URL_DEFAULT`** as a fallback (optional). Configure **`LOKI_URL_PROD`**, **`LOKI_URL_NONPROD`**, and optionally **`LOKI_BEARER_TOKEN`** (see `.env.example` and [Bitbucket: deploy-agent](#bitbucket-deploy-agent)). Toggle enrichment with **`LOKI_ENRICH_ENABLED=false`** if you need webhooks without calling Loki.
+If Grafana omits env labels, set **`LOKI_URL_DEFAULT`** as a fallback (optional). Configure **`LOKI_URL_PROD`**, **`LOKI_URL_NONPROD`**, and optionally **`LOKI_BEARER_TOKEN`** (see `.env.example` and [Deploy: deploy-agent](#deploy-deploy-agent)). Toggle enrichment with **`LOKI_ENRICH_ENABLED=false`** if you need webhooks without calling Loki.
 
 If your Explore queries look like **`{service_name="$app"} |= "…" | logfmt`**, note the **primary** enrichment pass runs **`query_range` on stream selectors only** (no `logfmt`). An **optional second pass** appends LogQL **`|~`** (**`LOKI_ENRICH_ERROR_LOGQL_REGEX`**) and merges deduped lines with the broad pass **before** the line-cap. Some stacks only put **`service_name`** on the stream, not **`environment`** — enrichment tries narrower selectors first, then **`{service_name="…"}`** alone so it lines up with how you browse in Grafana.
 
@@ -147,7 +147,7 @@ If your Explore queries look like **`{service_name="$app"} |= "…" | logfmt`**,
 
 ### Slack (optional)
 
-Create an [**Incoming Webhook**](https://api.slack.com/messaging/webhooks) and set **`SLACK_WEBHOOK_URL`** (mark **Secured** in Bitbucket). Each **`POST /hooks/grafana`** sends: environment + alert, **Ollama RCA** (if **`OLLAMA_RCA_ENABLED`** and **`OLLAMA_HOST`** reach your **`ai-model`** Ollama), **rule-based checklist**, and **redacted** log snippets. Tune **`OLLAMA_MODEL`** to match `ollama pull` on the host. Disable Slack with **`SLACK_NOTIFY_ENABLED=false`**; disable RCA only with **`OLLAMA_RCA_ENABLED=false`**. Response JSON includes **`loki_enrichment.rca`** (preview), **`slack`** metadata (optional **`operator_checklist_skipped`** when generic bullets were replaced), and **`webhook_notify`** (effective flags after overrides).
+Create an [**Incoming Webhook**](https://api.slack.com/messaging/webhooks) and set **`SLACK_WEBHOOK_URL`** (mark it secret in CI / `.env`). Each **`POST /hooks/grafana`** sends: environment + alert, **Ollama RCA** (if **`OLLAMA_RCA_ENABLED`** and **`OLLAMA_HOST`** reach your **`ai-model`** Ollama), **rule-based checklist**, and **redacted** log snippets. Tune **`OLLAMA_MODEL`** to match `ollama pull` on the host. Disable Slack with **`SLACK_NOTIFY_ENABLED=false`**; disable RCA only with **`OLLAMA_RCA_ENABLED=false`**. Response JSON includes **`loki_enrichment.rca`** (preview), **`slack`** metadata (optional **`operator_checklist_skipped`** when generic bullets were replaced), and **`webhook_notify`** (effective flags after overrides).
 
 **Smart operator checklist:** when the delivery is **low-signal** (e.g. **`DatasourceNoData`**, Loki skip **`insufficient_labels_for_logql_selector`**, no Loki URL / enrichment disabled, or **every** `query_range` attempt failed with network/HTTP errors), the agent **replaces** the generic LOKI_* bullet list with **one short explanation**—no Grafana rule changes. Set **`SLACK_SMART_SKIP_OPERATOR_CHECKLIST=false`** to always emit the full heuristic list.
 
@@ -168,10 +168,10 @@ Incoming Webhooks only **send** messages to Slack. To **receive** commands (e.g.
 | Step | Action |
 |------|--------|
 | 1 | Same or separate Slack app → **Event Subscriptions** → enable. |
-| 2 | **Request URL:** `https://<public-host>/hooks/slack/events` (HTTPS). Use a **Cloudflare Tunnel** host (e.g. `https://ai-sre-agent.weareonwork.com/...` from [Cloudflare Tunnel](#cloudflare-tunnel-optional-public-https)) or any reachable reverse proxy. Save — Slack sends a **challenge**; the agent answers automatically. |
+| 2 | **Request URL:** `https://<public-host>/hooks/slack/events` (HTTPS). Use a **Cloudflare Tunnel** host (e.g. `https://ai-sre-agent.example.com/...` from [Cloudflare Tunnel](#cloudflare-tunnel-optional-public-https)) or any reachable reverse proxy. Save — Slack sends a **challenge**; the agent answers automatically. |
 | 3 | Under **Subscribe to bot events**, add **`message.channels`** (add **`message.groups`** for private channels, **`message.im`** for DMs if needed). |
 | 4 | **OAuth & Permissions** → **Bot Token Scopes:** **`channels:history`** (and **`groups:history`** for private channels). For thread replies after **`rca`** / **`rerun`**, add **`chat:write:bot`**. Optional **`channels:join`** so the bot can join **public** channels automatically when **`chat.postMessage`** returns **`channel_not_found`** / **`not_in_channel`**. **Private** channels: **`/invite @YourApp`** in that channel. **Reinstall** the app after scope changes. |
-| 5 | **Basic Information** → **Signing Secret** → **`SLACK_SIGNING_SECRET`** on the agent (secured in Bitbucket). |
+| 5 | **Basic Information** → **Signing Secret** → **`SLACK_SIGNING_SECRET`** on the agent (secret in CI / `.env`). |
 | 6 | **OAuth & Permissions** → **Bot User OAuth Token** (`xoxb-`) → **`SLACK_BOT_TOKEN`** (optional). Without it, reruns still execute but nothing is posted back into Slack. |
 | 7 | `/invite @YourApp` in the alert channel so the app can see messages. |
 
@@ -181,7 +181,7 @@ Under the digest message, **reply in the thread** (not top-level) with:
 
 **`rca` and `rerun` are the same command** — both **re-run Ollama** on the **already-stored** event (same Grafana payload + Loki enrichment in Postgres). You are not replaying the Grafana webhook; you are **regenerating RCA text** on that snapshot. Use the same numeric **event id** as in the digest header (`event \`N\``). Optional **model** is one token (`llama3.2`, `mistral`, etc.) and must exist in Ollama. Optional **operator instructions** go after **`--`** (or write a multi-word message without **`--`** — everything after the event id is treated as instructions unless it is a single model-looking token). Instructions are appended to the RCA prompt (length-capped by **`OLLAMA_RCA_USER_PROMPT_MAX_CHARS`**).
 
-Thread replies use the same path as **`POST /events/{id}/rca/rerun`**. Whether a **second full Incoming Webhook digest** is posted after a rerun is controlled by **`NOTIFY_SLACK_ON_RCA_RERUN`** (Bitbucket / env, default **false**). The HTTP body field **`notify_slack`** overrides env when you send **`true`** or **`false`** explicitly; omit the field to follow env.
+Thread replies use the same path as **`POST /events/{id}/rca/rerun`**. Whether a **second full Incoming Webhook digest** is posted after a rerun is controlled by **`NOTIFY_SLACK_ON_RCA_RERUN`** (CI / env, default **false**). The HTTP body field **`notify_slack`** overrides env when you send **`true`** or **`false`** explicitly; omit the field to follow env.
 
 ### Quick checks with GET (curl)
 
@@ -216,7 +216,7 @@ curl -sS -X POST "http://HOST:8080/events/18/rca/rerun" \
   -d '{"model": "llama3.2", "user_prompt": "Emphasize blast radius and whether rollback is warranted.", "notify_slack": true}'
 ```
 
-Omit **`X-Webhook-Token`** when the agent has no **`WEBHOOK_SECRET`**. Omit **`notify_slack`** in the JSON to use **`NOTIFY_SLACK_ON_RCA_RERUN`** from the environment, or set **`"notify_slack": true`** to force a fresh Block Kit digest for that call. For **Slack-native** triggers without curl, use **[Slack Events API](#slack-events-api--rerun-rca-from-a-thread-reply)** (thread reply) or a **Workflow** HTTP step.
+Omit **`X-Webhook-Token`** when the agent has no **`WEBHOOK_SECRET`**. Omit **`notify_slack`** in the JSON to use **`NOTIFY_SLACK_ON_RCA_RERUN`** from the environment, or set **`"notify_slack": true`** to force a fresh Block Kit digest for that call. For **Slack-native** triggers without curl, use **[Slack Events API](#slack-events-api-rerun-rca-from-a-thread-reply)** (thread reply) or a **Workflow** HTTP step.
 
 **Interactive API docs** (FastAPI): open **`http://HOST:8080/docs`** in a browser (Swagger UI) or **`/redoc`**.
 
@@ -235,11 +235,11 @@ Suites cover the rerun command parser, Slack signature verification, Slack Incom
 
 ---
 
-## Bitbucket: deploy-agent
+## Deploy: deploy-agent
 
 ### Prerequisites
 
-- Runner with labels **`self.hosted`**, **`linux.shell`**, **`ai.agent`**.
+- Self-hosted runner (or SSH session) with Docker + Compose v2; optional runner tag **`ai.agent`**.
 - **`deploy-ollama`** has already run on this host with project **`ai_model_ollama`** so **`ai_model_ollama_default`** exists and **ollama** listens on port **11434** inside that network (unless you override **`OLLAMA_HOST`**).
 
 ### Docker networking (`ai_model_ollama_default`)
@@ -254,9 +254,9 @@ If you cannot share the network (e.g. Ollama elsewhere), remove the **`ai_model_
 
 Set **`CLOUDFLARE_TUNNEL_ENABLED=true`** and **`CLOUDFLARE_TUNNEL_TOKEN`** (connector token from Zero Trust → tunnel → **Install connector**). This repo only runs **`cloudflared`** with that token; **create the tunnel, public hostname, and DNS/CNAME in Cloudflare** (one-time in the dashboard).
 
-**Public hostname** (e.g. `https://ai-sre-agent.weareonwork.com/...`) → in Zero Trust add **Public hostname** pointing to **`http://localhost:8080`** (**`cloudflared`** uses **`network_mode: service:agent`**).
+**Public hostname** (e.g. `https://ai-sre-agent.example.com`) → in Zero Trust add **Public hostname** pointing to **`http://localhost:8080`** (**`cloudflared`** uses **`network_mode: service:agent`**).
 
-**Bitbucket repo vars for tunnel:** **`CLOUDFLARE_TUNNEL_ENABLED`**, **`CLOUDFLARE_TUNNEL_TOKEN`** (secured) — nothing else.
+**Env for tunnel:** **`CLOUDFLARE_TUNNEL_ENABLED`**, **`CLOUDFLARE_TUNNEL_TOKEN`** (secret) — nothing else.
 
 Local compose with tunnel:
 
@@ -269,9 +269,9 @@ Put **`CLOUDFLARE_TUNNEL_TOKEN=...`** in **`.env`** (pipeline appends it when tu
 
 ### Repository variables
 
-Set under **Repository settings → Repository variables** in **this** Bitbucket project.
+Set as **CI secrets**, host environment, or a local **`.env`** (never commit secrets). `./scripts/deploy-agent.sh` writes `.env` from the process environment.
 
-| Variable | Required | Secured? | Purpose |
+| Variable | Required | Secret? | Purpose |
 |----------|----------|----------|---------|
 | **`POSTGRES_PASSWORD`** | **Yes** | Yes | Postgres superuser password for Compose. |
 | **`WEBHOOK_SECRET`** | No | Yes | If set, Grafana must send **`X-Webhook-Token`** with the same value. |
@@ -326,17 +326,17 @@ The app now uses discrete Postgres env vars (host/user/password/db) by default, 
 
 **Not injected by this pipeline yet (set later in Compose/env when you wire them):** `OPENAI_BASE_URL`, `OPENAI_API_KEY`—see [ARCHITECTURE.md](ARCHITECTURE.md).
 
-### How to run the pipeline
+### How to deploy
 
-1. **Repository settings → Pipelines → Settings** → ensure Pipelines are **enabled**.
-2. **Repository settings → Repository variables** → add the table above (at minimum **`POSTGRES_PASSWORD`**).
-3. **Pipelines → Run pipeline** → choose **`deploy-agent`** → **Run**.
+1. Set the table above in the environment (at minimum **`POSTGRES_PASSWORD`**).
+2. On the VM or a self-hosted runner with Docker: **`./scripts/deploy-agent.sh`**.
+3. Any CI system can call that script after checkout; keep **`ai-model` `deploy-ollama`** first so **`ai_model_ollama_default`** exists.
 
 ### If Docker fails with `tcp://localhost:2375`
 
 The runner process may inherit **`DOCKER_HOST=tcp://localhost:2375`** (common in cloud CI examples). **Self-hosted** Linux should talk to **`/var/run/docker.sock`** instead. The pipeline runs **`unset DOCKER_HOST`** before compose; if it still fails:
 
-- As the **same OS user** the Bitbucket runner uses: **`docker info`** and **`docker compose version`** must work.
+- As the **same OS user** the deploy job uses: **`docker info`** and **`docker compose version`** must work.
 - Add that user to the **`docker`** group and **restart** the runner service, or install the runner so it uses a user that already has socket access.
 
 ### If `deploy-ollama` stops the agent containers
@@ -351,7 +351,7 @@ To preserve existing data from earlier `build_*` deployments, the Compose volume
 
 ## Related repo
 
-**`ai-model`** (Bitbucket) — **`deploy-ollama`** (runner **`ai.model`**) for Ollama; **`deploy-vllm`** (runner **`common.ai`**, GPU host) for vLLM later. Use that repository’s README for variables and prerequisites.
+**`ai-model`** — **`deploy-ollama`** (runner **`ai.model`**) for Ollama; **`deploy-vllm`** (runner **`common.ai`**, GPU host) for vLLM later. Use that repository’s README for variables and prerequisites.
 
 ---
 
