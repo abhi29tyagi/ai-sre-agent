@@ -1,9 +1,7 @@
-# Phase-0 stack: FastAPI agent + Postgres on the CPU VM (orchestrator only).
-# Ollama runs from repo **ai-model** (`deploy-ollama`, `-p ai_model_ollama`) — same host.
-# Agent joins Ollama's default network as external **ai_model_ollama_default** (exists after deploy-ollama).
-# Default OLLAMA_HOST is http://ollama:11434 (Compose service name on that network).
-#
-# Deploy: scripts/deploy-agent.sh on a host (or CI runner) with Docker + Compose v2.
+# Phase-0 stack: FastAPI agent + PostgreSQL on the CPU VM (orchestrator only).
+# Ollama can run in a separate Compose project on the same host.
+# By default, the agent joins the external ai_model_ollama_default network.
+# Set OLLAMA_HOST to the Ollama API address reachable from the agent container.
 
 services:
   postgres:
